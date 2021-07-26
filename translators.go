@@ -1,5 +1,5 @@
 // Package wraps all translators in github.com/go-playground/locales.
-// The translators are not created until asked for in GetTranslator.
+// The translators are not created until asked for in Get.
 package translators
 
 import (
@@ -17,8 +17,8 @@ var (
 	translators     = make(map[string]locales.Translator)
 )
 
-// GetTranslator gets the Translator for the given locale, nil if not found.
-func GetTranslator(locale string) locales.Translator {
+// Get gets the Translator for the given locale, nil if not found.
+func Get(locale string) locales.Translator {
 	locale = strings.ToLower(locale)
 
 	mu.RLock()
