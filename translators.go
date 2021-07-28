@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-playground/locales"
+	"github.com/go-playground/locales/currency"
 )
 
 var (
@@ -17,8 +18,8 @@ var (
 	translators     = make(map[string]locales.Translator)
 )
 
-// Get gets the Translator for the given locale, nil if not found.
-func Get(locale string) locales.Translator {
+// GetTranslator gets the Translator for the given locale, nil if not found.
+func GetTranslator(locale string) locales.Translator {
 	locale = strings.ToLower(locale)
 
 	mu.RLock()
@@ -41,4 +42,14 @@ func Get(locale string) locales.Translator {
 
 	return t
 
+}
+
+// GetCurrency gets the currency for the given ISO 4217 code,
+// or -1 if not found.
+func GetCurrency(code string) currency.Type {
+	c, found := currencies[strings.ToUpper(code)]
+	if !found {
+		return -1
+	}
+	return c
 }

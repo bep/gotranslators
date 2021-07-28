@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/token"
 	"io/fs"
 	"log"
 	"os"
@@ -15,6 +17,8 @@ import (
 	"strings"
 
 	_ "github.com/go-playground/locales"
+	_ "github.com/go-playground/locales/currency"
+	"golang.org/x/tools/go/packages"
 )
 
 const header = `
@@ -25,6 +29,11 @@ package translators
 `
 
 func main() {
+	createTranslatorsMap()
+	createCurrenciesMap()
+}
+
+func createTranslatorsMap() {
 	const localeMod = "github.com/go-playground/locales"
 	b := &bytes.Buffer{}
 	cmd := exec.Command("go", "list", "-m", "-json", localeMod)
@@ -79,5 +88,87 @@ func main() {
 	}
 
 	fmt.Fprintln(f, "\n}")
+}
 
+func createCurrenciesMap() {
+	cfg := &packages.Config{
+		Mode:  packages.LoadSyntax,
+		Tests: false,
+	}
+
+	pkgs, err := packages.Load(cfg, "github.com/go-playground/locales/currency")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pkg := pkgs[0]
+
+	collector := &currencyCollector{}
+
+	for _, f := range pkg.Syntax {
+		ast.Inspect(f, collector.handleNode)
+	}
+
+	sort.Strings(collector.constants)
+
+	f, err := os.Create(filepath.Join("../currencies.autogen.go"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "%s\nimport \"github.com/go-playground/locales/currency\"\n", header)
+
+	fmt.Fprintf(f, "var currencies = map[string]currency.Type {")
+	for _, currency := range collector.constants {
+		fmt.Fprintf(f, "\n%q: currency.%s,", currency, currency)
+	}
+	fmt.Fprintln(f, "}")
+
+}
+
+type currencyCollector struct {
+	constants []string
+}
+
+func (c *currencyCollector) handleNode(node ast.Node) bool {
+	decl, ok := node.(*ast.GenDecl)
+	if !ok || decl.Tok != token.CONST {
+		return true
+	}
+	typ := ""
+	for _, spec := range decl.Specs {
+		vspec := spec.(*ast.ValueSpec)
+		if vspec.Type == nil && len(vspec.Values) > 0 {
+			typ = ""
+
+			ce, ok := vspec.Values[0].(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			id, ok := ce.Fun.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			typ = id.Name
+		}
+		if vspec.Type != nil {
+			ident, ok := vspec.Type.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			typ = ident.Name
+		}
+		if typ != "Type" {
+			// This is not the type we're looking for.
+			continue
+		}
+		// We now have a list of names (from one line of source code) all being
+		// declared with the desired type.
+		// Grab their names and actual values and store them in f.values.
+		for _, name := range vspec.Names {
+			c.constants = append(c.constants, name.String())
+		}
+	}
+	return false
 }
